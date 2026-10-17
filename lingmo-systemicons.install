@@ -1,0 +1,5 @@
+# The pacman hook (lingmo-icons.hook) fills /var/lib/lingmo-icons on install and
+# upgrade; that directory is owned by no package, so it goes with the package.
+post_remove() {
+    rm -rf /var/lib/lingmo-icons
+}

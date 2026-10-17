@@ -1,0 +1,342 @@
+#!/usr/bin/env python3
+"""Puts the icons of installed third-party apps on Lingmo plates.
+
+For every application in /usr/share/applications whose icon Lingmo does not draw
+(and WhiteSur does not draw either, unless --plate-whitesur), the hicolor (or
+pixmaps) icon is composited onto the neutral squircle plate with the same shadow
+as the Lingmo icons, and written to the "Lingmo-generated" icon theme:
+
+    /var/lib/lingmo-icons/Lingmo-generated        generated, owned by no package
+    /usr/share/icons/Lingmo-generated -> there    symlink shipped by lingmo-systemicons
+
+Lingmo and Lingmo-dark list Lingmo-generated first in Inherits, so plated icons
+win over WhiteSur and hicolor while the Lingmo-drawn ones still win over them.
+
+Icons that are already a tile (square, squircle or full bleed, by alpha
+coverage) are left alone, so are tiny raster-only icons that would look blurry.
+At 16-24 px the original artwork is used without a plate.  Outputs of apps that
+were removed are deleted; unchanged apps are skipped (manifest.json).
+
+Run by /usr/share/libalpm/hooks/lingmo-icons.hook; run it by hand with
+    sudo lingmo-icons-update [--force] [--verbose]
+or against another root (tests): lingmo-icons-update --root DIR
+"""
+import argparse
+import configparser
+import io
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+try:
+    from PIL import Image
+except ImportError:   # the hook must never fail a pacman transaction
+    print("lingmo-icons-update: python-pillow is missing, skipping", file=sys.stderr)
+    sys.exit(0)
+
+VERSION = 1           # bump to regenerate everything after a design change
+THEME = "Lingmo-generated"
+RASTER_EXT = (".png", ".xpm")
+VECTOR_EXT = (".svg", ".svgz")
+MIN_RASTER = 96       # smaller raster-only sources are not upscaled onto a plate
+# "already a tile": opaque pixels fill most of their bounding box, the box is
+# square-ish and spans most of the canvas
+TILE_FILL = 0.86
+TILE_SPAN = 0.74
+TILE_ASPECT = (0.88, 1.14)
+
+
+def log(args, *msg):
+    if args.verbose:
+        print(*msg)
+
+
+def desktop_icons(root):
+    """{icon name: [desktop ids]} for the installed applications."""
+    apps_dir = os.path.join(root, "usr/share/applications")
+    icons = {}
+    if not os.path.isdir(apps_dir):
+        return icons
+    for dirpath, _, files in os.walk(apps_dir):
+        for f in files:
+            if not f.endswith(".desktop"):
+                continue
+            cp = configparser.RawConfigParser(strict=False, interpolation=None)
+            cp.optionxform = str
+            try:
+                cp.read(os.path.join(dirpath, f), encoding="utf-8")
+            except (configparser.Error, UnicodeDecodeError, OSError):
+                continue
+            if not cp.has_section("Desktop Entry"):
+                continue
+            e = cp["Desktop Entry"]
+            if e.get("Type", "Application") != "Application" or e.get("Hidden", "false").lower() == "true":
+                continue
+            icon = e.get("Icon", "").strip()
+            if not icon or "/" in icon:          # absolute paths can't be themed
+                continue
+            for ext in RASTER_EXT + VECTOR_EXT:
+                if icon.endswith(ext):
+                    icon = icon[: -len(ext)]
+            icons.setdefault(icon, []).append(f)
+    return icons
+
+
+def theme_names(root, theme):
+    """Icon names a theme has under apps/ (any size)."""
+    names = set()
+    base = os.path.join(root, "usr/share/icons", theme)
+    for dirpath, _, files in os.walk(base, followlinks=True):
+        # apps/16 (WhiteSur, Lingmo) or 16x16/apps (hicolor layout)
+        if not any(part.startswith("apps") for part in os.path.relpath(dirpath, base).split(os.sep)):
+            continue
+        for f in files:
+            n, ext = os.path.splitext(f)
+            if ext in (".svg", ".png", ".svgz", ".xpm"):
+                names.add(n)
+    return names
+
+
+def find_source(root, name):
+    """Best source for a name: (path, is_vector, pixel size) from hicolor or pixmaps."""
+    hicolor = os.path.join(root, "usr/share/icons/hicolor")
+    for d in ("scalable/apps",):
+        for ext in VECTOR_EXT:
+            p = os.path.join(hicolor, d, name + ext)
+            if os.path.isfile(p):
+                return p, True, 0
+    best = None
+    if os.path.isdir(hicolor):
+        for d in os.listdir(hicolor):
+            size = d.split("x")[0].split("@")[0]
+            if not size.isdigit():
+                continue
+            px = int(size) * (2 if "@2" in d else 1)
+            p = os.path.join(hicolor, d, "apps", name + ".png")
+            if os.path.isfile(p) and (best is None or px > best[2]):
+                best = (p, False, px)
+    if best:
+        return best
+    pix = os.path.join(root, "usr/share/pixmaps")
+    for ext in VECTOR_EXT:
+        p = os.path.join(pix, name + ext)
+        if os.path.isfile(p):
+            return p, True, 0
+    for ext in RASTER_EXT:
+        p = os.path.join(pix, name + ext)
+        if os.path.isfile(p):
+            try:
+                with Image.open(p) as im:
+                    return p, False, min(im.size)
+            except OSError:
+                pass
+    return None
+
+
+def small_source(root, name, px):
+    """Original artwork for a small size: an exact hicolor raster if there is one."""
+    p = os.path.join(root, "usr/share/icons/hicolor/%dx%d/apps/%s.png" % (px, px, name))
+    return p if os.path.isfile(p) else None
+
+
+def load(path, vector, px):
+    """RGBA image of the source at px x px (aspect kept, centred)."""
+    if vector:
+        if not shutil.which("rsvg-convert"):
+            return None
+        r = subprocess.run(["rsvg-convert", "-w", str(px), "-h", str(px), "--keep-aspect-ratio", path],
+                           capture_output=True)
+        if r.returncode != 0:
+            return None
+        im = Image.open(io.BytesIO(r.stdout)).convert("RGBA")
+    else:
+        im = Image.open(path).convert("RGBA")
+        k = px / float(max(im.size))
+        im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+    canvas = Image.new("RGBA", (px, px), (0, 0, 0, 0))
+    canvas.alpha_composite(im, ((px - im.width) // 2, (px - im.height) // 2))
+    return canvas
+
+
+def is_tile(im):
+    """Square, squircle or full-bleed artwork already brings its own plate."""
+    alpha = im.getchannel("A").point(lambda a: 255 if a > 127 else 0)
+    box = alpha.getbbox()
+    if not box:
+        return True                       # empty: nothing to plate
+    w, h = box[2] - box[0], box[3] - box[1]
+    fill = alpha.crop(box).histogram()[255] / float(w * h)
+    span = max(w, h) / float(im.width)
+    aspect = w / float(h)
+    return fill >= TILE_FILL and span >= TILE_SPAN and TILE_ASPECT[0] <= aspect <= TILE_ASPECT[1]
+
+
+def plate_icon(art, plate, content):
+    """Fit the artwork's visible box into the plate's content area."""
+    px = plate.width
+    box = art.getchannel("A").point(lambda a: 255 if a > 8 else 0).getbbox()
+    art = art.crop(box)
+    target = content * px
+    k = target / max(art.width, art.height)
+    size = (max(1, round(art.width * k)), max(1, round(art.height * k)))
+    art = art.resize(size, Image.LANCZOS)
+    out = plate.copy()
+    out.alpha_composite(art, ((px - size[0]) // 2, (px - size[1]) // 2))
+    return out
+
+
+def save(im, path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".png")
+    os.close(fd)
+    im.save(tmp, optimize=True)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
+
+
+def index_theme(spec):
+    dirs = []
+    for s in spec["small_sizes"] + spec["sizes"]:
+        dirs.append(("%dx%d/apps" % (s, s), s, 1))
+    for s in spec["hidpi_sizes"]:
+        dirs.append(("%dx%d@2/apps" % (s, s), s, 2))
+    text = ("[Icon Theme]\nName=%s\nComment=Third-party app icons on Lingmo plates (generated by "
+            "lingmo-icons-update)\nInherits=hicolor\nHidden=true\nDirectories=%s\n"
+            % (THEME, ",".join(d for d, _, _ in dirs)))
+    for d, s, scale in dirs:
+        text += "\n[%s]\nSize=%d\n%sContext=Applications\nType=Fixed\n" % (d, s, "Scale=2\n" if scale > 1 else "")
+    return text
+
+
+def outputs(spec):
+    """(relative dir, logical size, pixel size, plated) for every file written per icon."""
+    out = []
+    for s in spec["small_sizes"]:
+        out.append(("%dx%d/apps" % (s, s), s, s, False))
+    for s in spec["sizes"]:
+        out.append(("%dx%d/apps" % (s, s), s, s, True))
+    for s in spec["hidpi_sizes"]:
+        out.append(("%dx%d@2/apps" % (s, s), s, 2 * s, s not in spec["small_sizes"]))
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Put third-party app icons on Lingmo plates.")
+    ap.add_argument("--root", default="/", help="system root (default /)")
+    ap.add_argument("--out", help="output theme dir (default ROOT/var/lib/lingmo-icons/%s)" % THEME)
+    ap.add_argument("--force", action="store_true", help="regenerate every icon")
+    ap.add_argument("--plate-whitesur", action="store_true",
+                    help="also plate apps WhiteSur already draws")
+    ap.add_argument("--no-cache", action="store_true", help="don't run gtk-update-icon-cache")
+    ap.add_argument("--verbose", "-v", action="store_true")
+    ap.add_argument("--quiet", "-q", action="store_true")
+    args = ap.parse_args()
+
+    root = os.path.abspath(args.root)
+    share = os.path.join(root, "usr/share/lingmo-icons")
+    try:
+        with open(os.path.join(share, "plate.json")) as f:
+            spec = json.load(f)
+    except OSError:
+        print("lingmo-icons-update: %s/plate.json missing, nothing to do" % share, file=sys.stderr)
+        return 0
+    out = os.path.abspath(args.out or os.path.join(root, "var/lib/lingmo-icons", THEME))
+    os.makedirs(out, exist_ok=True)
+
+    manifest_path = os.path.join(out, "manifest.json")
+    try:
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        if manifest.get("version") != VERSION:
+            manifest = {}
+    except (OSError, ValueError):
+        manifest = {}
+    old = {} if args.force else manifest.get("icons", {})
+
+    drawn = theme_names(root, "Lingmo")
+    whitesur = set() if args.plate_whitesur else theme_names(root, "WhiteSur")
+    plates = {}
+    for px in spec["plate_px"]:
+        p = os.path.join(share, "plate-%d.png" % px)
+        if os.path.isfile(p):
+            plates[px] = Image.open(p).convert("RGBA")
+
+    icons, skipped = {}, {}
+    for name, ids in sorted(desktop_icons(root).items()):
+        if name in drawn:
+            skipped[name] = "drawn by Lingmo"
+            continue
+        if name in whitesur:
+            skipped[name] = "drawn by WhiteSur"
+            continue
+        src = find_source(root, name)
+        if not src:
+            skipped[name] = "no hicolor/pixmaps source"
+            continue
+        path, vector, srcpx = src
+        if not vector and srcpx < MIN_RASTER:
+            skipped[name] = "raster source too small (%d px)" % srcpx
+            continue
+        stamp = "%s:%d" % (path, int(os.stat(path).st_mtime))
+        if old.get(name, {}).get("stamp") == stamp:
+            icons[name] = old[name]
+            continue
+        art = load(path, vector, 512)
+        if art is None:
+            skipped[name] = "could not render %s" % path
+            continue
+        if is_tile(art):
+            skipped[name] = "already a tile"
+            continue
+        for rel, size, px, plated in outputs(spec):
+            dst = os.path.join(out, rel, name + ".png")
+            if plated:
+                plate = plates.get(px)
+                if plate is None:
+                    continue
+                save(plate_icon(art, plate, spec["content"]), dst)
+            else:
+                small = small_source(root, name, px)
+                im = load(small, False, px) if small else load(path, vector, px)
+                if im is not None:
+                    save(im, dst)
+        icons[name] = {"stamp": stamp, "apps": ids}
+        log(args, "plated", name, "<-", path)
+
+    # drop the outputs of apps that are gone (or now drawn / now a tile)
+    removed = 0
+    for name in set(manifest.get("icons", {})) - set(icons):
+        for rel, _, _, _ in outputs(spec):
+            p = os.path.join(out, rel, name + ".png")
+            if os.path.exists(p):
+                os.remove(p)
+        removed += 1
+        log(args, "removed", name)
+
+    with open(os.path.join(out, "index.theme"), "w") as f:
+        f.write(index_theme(spec))
+    tmp = manifest_path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"version": VERSION, "icons": icons, "skipped": skipped}, f, indent=1, sort_keys=True)
+    os.replace(tmp, manifest_path)
+
+    if not args.no_cache and shutil.which("gtk-update-icon-cache"):
+        subprocess.run(["gtk-update-icon-cache", "-q", "-t", "-f", out], check=False)
+    if not args.quiet:
+        print("lingmo-icons-update: %d plated, %d skipped, %d removed -> %s"
+              % (len(icons), len(skipped), removed, out))
+    if args.verbose:
+        for name, why in sorted(skipped.items()):
+            print("  skip %-40s %s" % (name, why))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as e:   # never break a pacman transaction
+        print("lingmo-icons-update: %s" % e, file=sys.stderr)
+        sys.exit(0)
