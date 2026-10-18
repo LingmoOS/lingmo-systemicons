@@ -4,8 +4,9 @@
     python3 generate.py --out DIR [--only NAME...] [--no-png] [--optimize]
 
 writes
-    DIR/icons/Lingmo/                 index.theme, apps/scalable/*.svg, apps/<px>/*.png, apps@2x/<px>/*.png
-    DIR/icons/Lingmo-dark/            index.theme + links to Lingmo's app dirs
+    DIR/icons/Lingmo/                 index.theme, apps/scalable/*.svg, apps/<px>/*.png, apps@2x/<px>/*.png,
+                                      places/{scalable,<px>}, places@2x/<px> (folders, trash, drives)
+    DIR/icons/Lingmo-dark/            index.theme + links to Lingmo's app and places dirs
     DIR/icons/hicolor/                fallback copies for names no app ships itself
     DIR/lingmo-icons/plate*.{svg,png} neutral plates + plate.json for lingmo-icons-update
 
@@ -26,6 +27,12 @@ Design notes
   * 16/22/24 px use a simplified variant: a bigger plate, no shadow, no detail
     elements, thicker strokes (or a hand-made small glyph).
   * QtSvg-safe: no filters, masks or clip paths (the shadow is stacked layers).
+  * Places (folders, trash, drives) share the plates' light: a vertical gradient
+    with a hue turn, the top-left sheen, a hairline top edge and a stacked shadow.
+    The Lingmo folder is a low, wide back panel whose tab rises in a long soft
+    ramp on the left, and a lighter front pocket with continuous corners; place
+    emblems are the app glyph language engraved into the pocket.  16 px drops the
+    emblem, 22/24 px keep it without details; the tab is taller at small sizes.
 """
 import argparse
 import colorsys
@@ -72,6 +79,19 @@ DESIGN = {
     "small_sizes": [16, 22, 24],
     "hidpi_sizes": [16, 22, 24, 32, 48, 64, 128, 256],   # @2x
     "plate_content": 0.62,         # third-party logos fit this fraction of the canvas
+    # places: folders, trash, drives
+    "corner_smooth": 0.64,         # handle length of the continuous corners (0.55 = circular)
+    "corner_extent": 1.28,         # how far a corner reaches along its edges, in radii
+    "folder_back_dl": -0.07,       # back panel: darker than the base colour
+    "folder_front_dl": 0.015,      # front pocket: lighter
+    "folder_grad_lightness": 0.05, # top/bottom spread inside each panel
+    "folder_hairline_alpha": 0.60, # bright edge along the top of the front pocket
+    "folder_lip_alpha": 0.12,      # shade the front pocket casts on the back panel
+    "emblem_scale": 0.46,          # app-glyph box (460 units) -> emblem on the pocket
+    "emblem_scale_small": 0.74,    # 22/24 px: a bigger emblem, details dropped
+    "emblem_alpha": 0.78,          # engraved glyph: a deep tint of the folder colour
+    "emblem_lip_alpha": 0.42,      # light lip under the engraving
+    "emblem_lip": 7,               # canvas units
 }
 
 # Lingmo palette: brand blue (lingmo-artwork/brand/lingmo-logo.svg) and the
@@ -913,6 +933,503 @@ def neutral_plate_svg(small=False):
 
 
 # --------------------------------------------------------------------------
+# Places: folders, trash, drives
+# --------------------------------------------------------------------------
+def rpoly_d(pts, radii):
+    """Closed polygon whose corners are continuous-curvature curves (radius 0 = sharp)."""
+    g = DESIGN
+    n = len(pts)
+    segs = []
+    for i, (vx, vy) in enumerate(pts):
+        r = radii[i]
+        if not r:
+            segs.append(((vx, vy), None, None, (vx, vy)))
+            continue
+        (px, py), (nx, ny) = pts[i - 1], pts[(i + 1) % n]
+        lp, ln = math.hypot(px - vx, py - vy), math.hypot(nx - vx, ny - vy)
+        ext = min(r * g["corner_extent"], lp / 2, ln / 2)
+        a = (vx + (px - vx) / lp * ext, vy + (py - vy) / lp * ext)
+        b = (vx + (nx - vx) / ln * ext, vy + (ny - vy) / ln * ext)
+        k = g["corner_smooth"]
+        c1 = (a[0] + (vx - a[0]) * k, a[1] + (vy - a[1]) * k)
+        c2 = (b[0] + (vx - b[0]) * k, b[1] + (vy - b[1]) * k)
+        segs.append((a, c1, c2, b))
+    d = ["M %s %s" % (fmt(segs[0][0][0]), fmt(segs[0][0][1]))]
+    for i, (a, c1, c2, b) in enumerate(segs):
+        if i:
+            d.append("L %s %s" % (fmt(a[0]), fmt(a[1])))
+        if c1:
+            d.append("C %s %s %s %s %s %s" % tuple(fmt(v) for v in (*c1, *c2, *b)))
+    return " ".join(d) + " Z"
+
+
+def rrect_d(x0, y0, x1, y1, r_top, r_bottom=None):
+    rb = r_top if r_bottom is None else r_bottom
+    return rpoly_d([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], [r_top, r_top, rb, rb])
+
+
+def stacked_shadow(svg, d, small=False, scale=1.0):
+    """The plates' blurred shadow for any silhouette: stacked, growing, dropping copies."""
+    g = DESIGN
+    if small:
+        svg.body.append('<path d="%s" fill="#000000" opacity="0.16" transform="translate(0 10)"/>' % d)
+        return
+    n = g["shadow_layers"]
+    a = 1 - (1 - g["shadow_alpha"] * scale) ** (1 / n)
+    for i in range(n, 0, -1):
+        e = g["shadow_spread"] * i / n
+        dy = g["shadow_offset"] * i / n
+        svg.body.append('<path d="%s" fill="#000000" stroke="#000000" stroke-width="%s" stroke-linejoin="round" '
+                        'opacity="%s" transform="translate(0 %s)"/>'
+                        % (d, fmt(2 * e), fmt(a) if a >= 0.05 else "%.3f" % a, fmt(dy)))
+    svg.body.append('<path d="%s" fill="#000000" opacity="%s" transform="translate(0 4)"/>'
+                    % (d, fmt(g["contact_alpha"] * scale)))
+
+
+def panel_colors(color, dl):
+    g = DESIGN
+    gl = g["folder_grad_lightness"]
+    return (shade(color, dl + gl, -g["grad_hue_turn"]), shade(color, dl - gl, g["grad_hue_turn"]))
+
+
+# Folder colours for KDE's "folder colour" (folder-<colour>); blue is the brand folder
+FOLDER_COLORS = {
+    "blue":   PALETTE["brand"],
+    "red":    "#F24A5B",
+    "orange": "#FA8C2E",
+    "yellow": "#F5B70F",
+    "green":  "#2DB04F",
+    "teal":   PALETTE["teal"],
+    "purple": PALETTE["purple"],
+    "pink":   "#EE5BA6",
+    "grey":   "#8792A6",
+    "brown":  "#A8744A",
+    "black":  "#434B5E",
+}
+FOLDER_COLOR_ALIASES = {"blue": ["folder-blue"], "purple": ["folder-violet"], "pink": ["folder-magenta"],
+                        "teal": ["folder-cyan"], "grey": ["folder-gray"]}
+
+
+def folder_geom(small):
+    if small:   # fills the pixels; the tab is taller so it survives 16 px
+        return dict(x0=28, x1=996, yt=100, yb=222, tx0=330, tx1=500, yf=322, y1=940,
+                    rb=150, rt=110, rtab=64, rf=100, ew=22)
+    return dict(x0=80, x1=944, yt=160, yb=252, tx0=320, tx1=492, yf=330, y1=872,
+                rb=136, rt=96, rtab=64, rf=92, ew=6)
+
+
+def folder_svg(color, emblem=None, open_=False, variant="full"):
+    """The Lingmo folder.  variant: full (32 px and up), small (22/24 px), tiny (16 px)."""
+    g = DESIGN
+    small = variant != "full"
+    G = folder_geom(small)
+    x0, x1, yt, yb, yf, y1 = G["x0"], G["x1"], G["yt"], G["yb"], G["yf"], G["y1"]
+    svg = Svg()
+
+    back = rpoly_d([(x0, y1), (x0, yt), (G["tx0"], yt), (G["tx1"], yb), (x1, yb), (x1, y1)],
+                   [G["rb"], G["rt"], G["rtab"], G["rtab"], G["rt"], G["rb"]])
+    if open_:   # the pocket falls forward: lower top edge, a little wider than its base
+        drop, out, tuck = (110, 18, 0) if not small else (130, 12, 0)
+        fpts = [(x0 - out, yf + drop), (x1 + out, yf + drop), (x1 - tuck, y1), (x0 + tuck, y1)]
+        front = rpoly_d(fpts, [G["rf"], G["rf"], G["rb"], G["rb"]])
+        fy0 = yf + drop
+    else:
+        fpts = [(x0, yf), (x1, yf), (x1, y1), (x0, y1)]
+        front = rpoly_d(fpts, [G["rf"], G["rf"], G["rb"], G["rb"]])
+        fy0 = yf
+
+    bt, bb = panel_colors(color, g["folder_back_dl"])
+    bt = shade(bt, 0.03)   # the tab catches a little more light
+    ft, fb = panel_colors(color, g["folder_front_dl"])
+    # the back panel only shows above the pocket: its gradient ends in the pocket's shade
+    svg.defs.append(linear("back", [(0, bt, 1), (0.75, bb, 1),
+                                    (1, mix(bb, "#000000", g["folder_lip_alpha"]), 1)], yt, yf + 4))
+    svg.defs.append(linear("front", [(0, ft, 1), (1, fb, 1)], fy0, y1))
+
+    stacked_shadow(svg, back, small, scale=0.9)
+    svg.body.append('<path d="%s" fill="url(#back)"/>' % back)
+    # back hairline: light catching the top of the tab and panel
+    ew = G["ew"]
+    svg.defs.append(linear("bedge", [(0, "#FFFFFF", 0.45), (0.5, "#FFFFFF", 0)], yt, yf))
+    svg.body.append('<path d="%s" fill="none" stroke="url(#bedge)" stroke-width="%s"/>' % (
+        rpoly_d([(x0 + ew / 2, y1), (x0 + ew / 2, yt + ew / 2), (G["tx0"] - ew / 4, yt + ew / 2),
+                 (G["tx1"] - ew / 4, yb + ew / 2), (x1 - ew / 2, yb + ew / 2), (x1 - ew / 2, y1)],
+                [G["rb"], G["rt"], G["rtab"], G["rtab"], G["rt"], G["rb"]]), fmt(ew)))
+
+    if open_:   # two sheets of paper inside
+        for dx, dy, op in ((70, 40, 0.75), (110, 0, 1)):
+            svg.defs.append(linear("sheet%d" % dx, [(0, "#FFFFFF", 1), (1, "#E3E8F0", 1)], yb + dy, y1))
+            svg.body.append('<path d="%s" fill="url(#sheet%d)"%s/>' % (
+                rrect_d(x0 + dx, yb + dy - 10, x1 - dx, y1 - 80, 40), dx,
+                "" if op == 1 else ' opacity="%s"' % fmt(op)))
+        # the shade the falling pocket casts on the paper
+        svg.defs.append(linear("fcast", [(0, "#000000", 0), (1, "#000000", 0.18)], fy0 - 70, fy0))
+        svg.body.append('<path d="%s" fill="url(#fcast)"/>' % rrect_d(x0 + 70, fy0 - 70, x1 - 70, fy0 + 20, 0))
+
+    svg.body.append('<path d="%s" fill="url(#front)"/>' % front)
+
+    # emblem engraved into the pocket
+    if emblem and variant != "tiny":
+        s = g["emblem_scale_small"] if small else g["emblem_scale"]
+        cy = (fy0 + y1) / 2 + (0 if not small else 6)
+        tx, ty = C - C * s, cy - C * s
+        elems = emblem() if not small else [e for e in emblem() if not e["detail"]]
+        sw_scale = g["glyph_small_scale"] if small else 1.0
+        ink = mix(mix(color, "#0A1E4A", 0.55), fb, 0.15)
+        # the pocket gradient in emblem space, for cut-outs
+        svg.defs.append(linear("fronte", [(0, ft, 1), (1, fb, 1)], (fy0 - ty) / s, (y1 - ty) / s))
+        grp = '<g transform="translate(%s %s) scale(%s)">' % (fmt(tx), fmt(ty), "%.4f" % s)
+        if not small:
+            lip = [element_svg(e, lambda p: "#FFFFFF", sw_scale) for e in elems
+                   if e["fill"] != "p" and e["stroke"] != "p"]
+            svg.body.append('<g opacity="%s">%s<g transform="translate(0 %s)">%s</g></g></g>'
+                            % (fmt(g["emblem_lip_alpha"]), grp, fmt(g["emblem_lip"] / s), "".join(lip)))
+        paint = {"g": ink, "a": ink, "b": ink, "p": "url(#fronte)"}
+        body = [element_svg(e, lambda p: paint.get(p, p), sw_scale) for e in elems]
+        alpha = g["emblem_alpha"] if not small else 0.95   # small sizes need the contrast
+        svg.body.append('%s<g opacity="%s">%s</g></g>' % (grp, fmt(alpha), "".join(body)))
+
+    # light over the pocket: sheen from the top left, top band, bottom shade, hairline edge
+    svg.defs.append('<radialGradient id="fsheen" gradientUnits="userSpaceOnUse" cx="%s" cy="%s" r="%s">'
+                    '<stop offset="0" stop-color="#FFFFFF" stop-opacity="%s"/>'
+                    '<stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>'
+                    % (fmt(x0 + 0.2 * (x1 - x0)), fmt(fy0), fmt(0.8 * (x1 - x0)), fmt(g["sheen_alpha"])))
+    svg.body.append('<path d="%s" fill="url(#fsheen)"/>' % front)
+    svg.defs.append(linear("fhl", [(0, "#FFFFFF", g["highlight_alpha"]), (0.4, "#FFFFFF", 0),
+                                   (0.6, "#000000", 0), (1, "#000000", g["base_shade_alpha"])], fy0, y1))
+    svg.body.append('<path d="%s" fill="url(#fhl)"/>' % front)
+    few = ew if not small else ew * 0.8
+    svg.defs.append(linear("fedge", [(0, "#FFFFFF", g["folder_hairline_alpha"]), (0.12, "#FFFFFF", 0.10),
+                                     (0.5, "#FFFFFF", 0), (0.85, "#000000", 0),
+                                     (1, "#000000", g["edge_bottom_alpha"])], fy0, y1))
+    h = few / 2
+    inset = [(fpts[0][0] + h, fpts[0][1] + h), (fpts[1][0] - h, fpts[1][1] + h),
+             (fpts[2][0] - h, fpts[2][1] - h), (fpts[3][0] + h, fpts[3][1] - h)]
+    svg.body.append('<path d="%s" fill="none" stroke="url(#fedge)" stroke-width="%s"/>'
+                    % (rpoly_d(inset, [G["rf"], G["rf"], G["rb"], G["rb"]]), fmt(few)))
+    return svg.text()
+
+
+# Emblems: the app glyph language (glyph box 282..742), engraved into the pocket
+def e_home():
+    return [P("M 512 302 L 732 492 H 672 V 692 Q 672 732 632 732 H 392 Q 352 732 352 692 V 492 H 292 Z",
+              fill="g", stroke="g", sw=44),
+            Rect(467, 592, 90, 140, 24, fill="p", detail=True, shadow=False)]
+
+
+def e_desktop():
+    return [Rect(282, 302, 460, 330, 54, fill="g"),
+            Rect(334, 354, 356, 226, 18, fill="p", op=0.9, detail=True, shadow=False),
+            P("M 512 632 V 712 M 412 722 H 612", stroke="g", sw=56)]
+
+
+def e_documents():
+    return [P("M 382 282 H 572 L 702 412 V 682 Q 702 742 642 742 H 382 Q 322 742 322 682 V 342 "
+              "Q 322 282 382 282 Z", fill="g"),
+            P("M 572 282 V 362 Q 572 412 622 412 H 702 Z", fill="p", op=0.55, shadow=False),
+            P("M 392 512 H 632 M 392 592 H 632 M 392 672 H 532", stroke="p", sw=36, detail=True, shadow=False)]
+
+
+def e_download():
+    return [P("M 512 282 V 572 M 402 472 L 512 582 L 622 472", stroke="g", sw=64),
+            P("M 302 632 V 682 Q 302 732 352 732 H 672 Q 722 732 722 682 V 632", stroke="g", sw=64)]
+
+
+def e_music():
+    return [P("M 452 662 V 352 L 712 302 V 622", stroke="g", sw=52),
+            P("M 452 342 L 712 292 V 392 L 452 442 Z", fill="g", stroke="g", sw=20),
+            Circ(392, 662, 76, fill="g"),
+            Circ(652, 622, 76, fill="g")]
+
+
+def e_videos():
+    return [Rect(282, 332, 460, 360, 72, fill="g"),
+            P(L((472, 442), (472, 582), (592, 512)) + " Z", fill="p", stroke="p", sw=34, shadow=False)]
+
+
+def e_templates():
+    return [Rect(302, 302, 420, 420, 60, stroke="g", sw=52),
+            P("M 302 452 H 722 M 462 452 V 722", stroke="g", sw=52)]
+
+
+def e_public():
+    return [P(L((652, 352), (372, 512), (652, 672)), stroke="g", sw=44),
+            Circ(372, 512, 76, fill="g"), Circ(652, 352, 76, fill="g"), Circ(652, 672, 76, fill="g")]
+
+
+def e_games():
+    return [P("M 392 382 H 632 C 712 382 752 452 752 552 C 752 642 712 692 662 692 C 612 692 602 622 562 622 "
+              "H 462 C 422 622 412 692 362 692 C 312 692 272 642 272 552 C 272 452 312 382 392 382 Z", fill="g"),
+            P("M 382 482 V 582 M 332 532 H 432", stroke="p", sw=34, shadow=False),
+            Circ(622, 502, 26, fill="p", detail=True, shadow=False),
+            Circ(672, 562, 26, fill="p", detail=True, shadow=False)]
+
+
+def e_code():
+    return [P(L((412, 372), (302, 512), (412, 652)), stroke="g", sw=60),
+            P(L((612, 372), (722, 512), (612, 652)), stroke="g", sw=60),
+            P("M 552 322 L 472 702", stroke="g", sw=52)]
+
+
+def e_git():
+    return [P("M 392 352 V 672", stroke="g", sw=48),
+            P("M 632 432 C 632 562 392 532 392 642", stroke="g", sw=48),
+            Circ(392, 342, 66, fill="g"), Circ(392, 682, 66, fill="g"), Circ(632, 412, 66, fill="g")]
+
+
+def e_cloud():
+    return [P("M 382 692 C 312 692 272 642 272 582 C 272 522 322 472 382 472 C 392 392 452 342 532 342 "
+              "C 622 342 682 402 692 482 C 742 492 762 542 762 592 C 762 652 712 692 662 692 Z", fill="g")]
+
+
+def e_network():
+    return [Circ(C, C, 222, stroke="g", sw=44),
+            P("M 512 292 C 412 372 412 652 512 732 C 612 652 612 372 512 292 Z", stroke="g", sw=40),
+            P("M 292 512 H 732", stroke="g", sw=40),
+            P("M 332 412 H 692 M 332 612 H 692", stroke="g", sw=30, detail=True)]
+
+
+def e_star():
+    pts = [polar(C, 532, 246 if i % 2 == 0 else 112, i * 36) for i in range(10)]
+    return [P(L(*pts) + " Z", fill="g", stroke="g", sw=44)]
+
+
+def e_recent():
+    return [Circ(C, C, 222, stroke="g", sw=56),
+            P(L((512, 382), (512, 512), (612, 582)), stroke="g", sw=56)]
+
+
+def e_apps():
+    return [Rect(x, y, 186, 186, 52, fill="g") for y in (306, 532) for x in (306, 532)]
+
+
+def e_temp():
+    return [P("M 352 292 H 672 M 352 732 H 672", stroke="g", sw=52),
+            P("M 402 302 C 402 432 512 452 512 512 C 512 572 402 592 402 722 M 622 302 C 622 432 512 452 512 512 "
+              "C 512 572 622 592 622 722", stroke="g", sw=40),
+            P("M 432 712 C 452 642 572 642 592 712 Z", fill="g", stroke="g", sw=20)]
+
+
+def e_trash():
+    return [P("M 302 362 H 722", stroke="g", sw=52),
+            P("M 442 352 V 322 Q 442 292 472 292 H 552 Q 582 292 582 322 V 352", stroke="g", sw=40),
+            P("M 342 422 H 682 L 652 702 Q 647 742 607 742 H 417 Q 377 742 372 702 Z", fill="g",
+              stroke="g", sw=20),
+            P("M 462 492 V 672 M 562 492 V 672", stroke="p", sw=30, detail=True, shadow=False)]
+
+
+def trash_svg(full=False, variant="full"):
+    """user-trash: an open paper-white bin with a graphite inside; paper rises out of it when full."""
+    small = variant != "full"
+    svg = Svg()
+    body = rpoly_d([(240, 330), (784, 330), (736, 900), (288, 900)], [0, 0, 80, 80])
+    rim = rrect_d(208, 262, 816, 346, 40)
+    k = 1.12 if small else 1.0
+    if small:
+        svg.body.append('<g transform="translate(%s %s) scale(%s)">' % (fmt(C - C * k), fmt(C - 580 * k + 12),
+                                                                         "%.4f" % k))
+    stacked_shadow(svg, rpoly_d([(208, 262), (816, 262), (816, 346), (784, 346), (736, 900), (288, 900),
+                                 (240, 346), (208, 346)], [40, 40, 40, 0, 80, 80, 0, 40]), small, scale=0.85)
+    svg.defs.append(linear("body", [(0, "#FFFFFF", 1), (1, "#CFD6E2", 1)], 330, 900))
+    svg.body.append('<path d="%s" fill="url(#body)"/>' % body)
+    svg.defs.append(linear("rim", [(0, "#000000", 0.18), (0.1, "#000000", 0), (0.85, "#000000", 0),
+                                   (1, "#000000", 0.08)], 340, 900))
+    svg.body.append('<path d="%s" fill="url(#rim)"/>' % body)
+    # engraved ribs
+    ribs = (400, 512, 624) if not small else (420, 604)
+    rsw = 30 if not small else 60
+    rib = " ".join("M %d 430 L %s 810" % (x, fmt(x + (x - 512) * 0.07)) for x in ribs)
+    if not small:
+        svg.body.append('<path d="%s" fill="none" stroke="#FFFFFF" stroke-width="%d" stroke-linecap="round" '
+                        'transform="translate(4 6)"/>' % (rib, rsw))
+    svg.body.append('<path d="%s" fill="none" stroke="#7D8AA0" stroke-width="%d" stroke-linecap="round" '
+                    'opacity="0.55"/>' % (rib, rsw))
+    svg.body.append('<path d="%s" fill="none" stroke="#000000" stroke-opacity="0.12" stroke-width="3"/>' % body)
+    # rim, with the dark inside of the bin
+    svg.defs.append(linear("rimf", [(0, "#FFFFFF", 1), (1, "#DCE2EB", 1)], 262, 346))
+    svg.body.append('<path d="%s" fill="url(#rimf)"/>' % rim)
+    svg.defs.append(linear("inside", [(0, "#2E3747", 1), (1, "#5D6B84", 1)], 284, 322))
+    svg.body.append('<path d="%s" fill="url(#inside)"/>' % rrect_d(246, 282, 778, 322, 18))
+    if full:   # paper rising out of the bin
+        svg.defs.append(linear("paper", [(0, "#FFFFFF", 1), (1, "#DDE3EC", 1)], 120, 320))
+        svg.body.append('<g transform="rotate(-9 470 300)"><path d="%s" fill="url(#paper)"/>'
+                        '<path d="M 420 170 H 560 M 420 226 H 580 M 420 282 H 520" fill="none" stroke="%s" stroke-width="20" '
+                        'stroke-linecap="round" opacity="0.55"/></g>'
+                        % (rrect_d(370, 96, 620, 330, 24), PALETTE["brand"]))
+        svg.defs.append(linear("crumple", [(0, "#F1F4F8", 1), (1, "#B9C3D3", 1)], 190, 320))
+        svg.body.append('<path d="M 568 316 C 540 250 584 190 646 198 C 700 180 760 214 754 270 C 780 296 760 320 '
+                        '728 320 Z" fill="url(#crumple)"/>')
+        svg.body.append('<path d="M 600 270 L 648 248 L 676 290 M 648 248 L 690 232" fill="none" stroke="#9AA6B8" '
+                        'stroke-width="12" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>')
+        svg.body.append('<circle cx="326" cy="262" r="78" fill="%s"/>' % shade(PALETTE["brand"], 0.06))
+        svg.body.append('<path d="M 284 236 L 340 254 L 318 304" fill="none" stroke="#FFFFFF" stroke-width="12" '
+                        'stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>')
+        # the front lip of the rim covers the paper's foot
+        svg.body.append('<path d="%s" fill="url(#rimf)"/>' % rpoly_d(
+            [(212, 314), (812, 314), (816, 346), (208, 346)], [0, 0, 20, 20]))
+    svg.defs.append(linear("rimedge", [(0, "#FFFFFF", 1), (0.5, "#FFFFFF", 0), (0.8, "#000000", 0),
+                                       (1, "#000000", 0.25)], 262, 346))
+    svg.body.append('<path d="%s" fill="none" stroke="#000000" stroke-opacity="0.14" stroke-width="3"/>'
+                    % rrect_d(209.5, 263.5, 814.5, 344.5, 39))
+    if small:
+        svg.body.append("</g>")
+    return svg.text()
+
+
+def harddisk_svg(variant="full"):
+    """drive-harddisk: a paper-white slab with a graphite front and a Lingmo-blue light."""
+    small = variant != "full"
+    svg = Svg()
+    x0, x1, y0, y1, r = (112, 912, 342, 682, 96) if not small else (40, 984, 222, 802, 120)
+    slab = rrect_d(x0, y0, x1, y1, r)
+    stacked_shadow(svg, slab, small)
+    cut = 0.62 if not small else 0.55
+    svg.defs.append(linear("slab", [(0, "#FFFFFF", 1), (cut, "#D3DAE5", 1), (cut, "#56657E", 1),
+                                    (1, "#353F52", 1)], y0, y1))
+    svg.body.append('<path d="%s" fill="url(#slab)"/>' % slab)
+    by = y0 + (y1 - y0) * (1 + cut) / 2
+    if not small:
+        vents = " ".join("M %d %d V %d" % (192 + 44 * i, by - 26, by + 26) for i in range(6))
+        svg.body.append('<path d="%s" fill="none" stroke="#1E2533" stroke-width="18" stroke-linecap="round" '
+                        'opacity="0.6"/>' % vents)
+        svg.body.append('<circle cx="812" cy="%s" r="46" fill="%s" opacity="0.3"/>' % (fmt(by), PALETTE["sky"]))
+    svg.body.append('<circle cx="%s" cy="%s" r="%d" fill="%s"/>' % (fmt(x1 - 100), fmt(by), 24 if not small else 48,
+                                                                     PALETTE["sky"]))
+    svg.defs.append(linear("sedge", [(0, "#FFFFFF", 0.9), (0.3, "#FFFFFF", 0), (0.9, "#000000", 0),
+                                     (1, "#000000", 0.25)], y0, y1))
+    svg.body.append('<path d="%s" fill="none" stroke="url(#sedge)" stroke-width="6"/>'
+                    % rrect_d(x0 + 3, y0 + 3, x1 - 3, y1 - 3, r))
+    svg.body.append('<path d="%s" fill="none" stroke="#000000" stroke-opacity="0.12" stroke-width="3"/>'
+                    % rrect_d(x0 + 1.5, y0 + 1.5, x1 - 1.5, y1 - 1.5, r))
+    return svg.text()
+
+
+def removable_svg(variant="full"):
+    """drive-removable-media: a Lingmo-blue stick with the ribbon loop and a metal plug."""
+    g = DESIGN
+    small = variant != "full"
+    svg = Svg()
+    x0, x1, y0, y1 = (132, 712, 372, 652) if not small else (40, 720, 272, 752)
+    plug = rrect_d(x1 - 30, y0 + 56, 900 if not small else 984, y1 - 56, 14)
+    body = rrect_d(x0, y0, x1, y1, 88)
+    stacked_shadow(svg, rpoly_d([(x0, y0), (x1, y0), (x1, y0 + 56), (900 if not small else 984, y0 + 56),
+                                 (900 if not small else 984, y1 - 56), (x1, y1 - 56), (x1, y1), (x0, y1)],
+                                [88, 0, 0, 14, 14, 0, 0, 88]), small)
+    svg.defs.append(linear("plug", [(0, "#F4F6FA", 1), (1, "#A9B4C5", 1)], y0 + 56, y1 - 56))
+    svg.body.append('<path d="%s" fill="url(#plug)"/>' % plug)
+    if not small:
+        svg.body.append('<path d="M 790 470 H 830 M 790 554 H 830" fill="none" stroke="#56647C" stroke-width="30" '
+                        'stroke-linecap="square"/>')
+    top, bottom = (shade(PALETTE["brand"], g["grad_lightness"], -g["grad_hue_turn"]),
+                   shade(PALETTE["brand"], -g["grad_lightness"], g["grad_hue_turn"]))
+    svg.defs.append(linear("stick", [(0, top, 1), (1, bottom, 1)], y0, y1))
+    svg.body.append('<path d="%s" fill="url(#stick)"/>' % body)
+    cy = (y0 + y1) / 2
+    if not small:   # lanyard eyelet and an activity light
+        svg.body.append('<circle cx="%s" cy="%s" r="34" fill="#000000" opacity="0.25"/>' % (fmt(x0 + 84), fmt(cy)))
+        svg.body.append('<circle cx="%s" cy="%s" r="34" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" '
+                        'stroke-width="6" transform="translate(0 4)"/>' % (fmt(x0 + 84), fmt(cy)))
+    svg.body.append('<path d="M %s %s H %s" fill="none" stroke="#FFFFFF" stroke-width="%s" stroke-linecap="round" '
+                    'opacity="0.9"/>' % (fmt(x1 - 200), fmt(cy), fmt(x1 - 100), fmt(36 if not small else 64)))
+    svg.defs.append(linear("stedge", [(0, "#FFFFFF", 0.55), (0.35, "#FFFFFF", 0.04), (0.8, "#000000", 0),
+                                      (1, "#000000", 0.16)], y0, y1))
+    svg.defs.append(linear("sthl", [(0, "#FFFFFF", 0.18), (0.45, "#FFFFFF", 0)], y0, y1))
+    svg.body.append('<path d="%s" fill="url(#sthl)"/>' % body)
+    svg.body.append('<path d="%s" fill="none" stroke="url(#stedge)" stroke-width="6"/>'
+                    % rrect_d(x0 + 3, y0 + 3, x1 - 3, y1 - 3, 86))
+    return svg.text()
+
+
+def optical_svg(variant="full"):
+    """media-optical: a silver disc with a soft iridescent sweep."""
+    small = variant != "full"
+    svg = Svg()
+    R, hole = (420, 58) if not small else (488, 90)
+
+    def ring(r_out, r_in):
+        return ("M %s %s A %s %s 0 1 0 %s %s A %s %s 0 1 0 %s %s Z M %s %s A %s %s 0 1 1 %s %s A %s %s 0 1 1 %s %s Z"
+                % (fmt(C - r_out), fmt(C), fmt(r_out), fmt(r_out), fmt(C + r_out), fmt(C), fmt(r_out), fmt(r_out),
+                   fmt(C - r_out), fmt(C), fmt(C - r_in), fmt(C), fmt(r_in), fmt(r_in), fmt(C + r_in), fmt(C),
+                   fmt(r_in), fmt(r_in), fmt(C - r_in), fmt(C)))
+    disc = ring(R, hole)
+    stacked_shadow(svg, "M %s %s A %s %s 0 1 0 %s %s A %s %s 0 1 0 %s %s Z" % (
+        fmt(C - R), fmt(C), fmt(R), fmt(R), fmt(C + R), fmt(C), fmt(R), fmt(R), fmt(C - R), fmt(C)), small)
+    svg.defs.append(linear("disc", [(0, "#FAFBFD", 1), (1, "#C2CAD7", 1)], C - R, C + R))
+    svg.body.append('<path d="%s" fill="url(#disc)" fill-rule="evenodd"/>' % disc)
+    svg.defs.append('<linearGradient id="iris" gradientUnits="userSpaceOnUse" x1="%s" y1="%s" x2="%s" y2="%s">'
+                    '<stop offset="0.15" stop-color="#7FD3FF" stop-opacity="0"/>'
+                    '<stop offset="0.35" stop-color="#7FD3FF" stop-opacity="0.45"/>'
+                    '<stop offset="0.5" stop-color="#C9A2FF" stop-opacity="0.4"/>'
+                    '<stop offset="0.65" stop-color="#FFB3D1" stop-opacity="0.4"/>'
+                    '<stop offset="0.8" stop-color="#FFE08A" stop-opacity="0.35"/>'
+                    '<stop offset="0.95" stop-color="#FFE08A" stop-opacity="0"/></linearGradient>'
+                    % (fmt(C - R), fmt(C - R), fmt(C + R), fmt(C + R)))
+    svg.body.append('<path d="%s" fill="url(#iris)" fill-rule="evenodd"/>' % disc)
+    hub = hole + (100 if not small else 90)
+    svg.body.append('<path d="%s" fill="#FFFFFF" opacity="0.7" fill-rule="evenodd"/>' % ring(hub, hole))
+    svg.body.append('<circle cx="%s" cy="%s" r="%s" fill="none" stroke="#000000" stroke-opacity="0.12" '
+                    'stroke-width="%s"/>' % (fmt(C), fmt(C), fmt(hub), 4 if not small else 10))
+    svg.body.append('<circle cx="%s" cy="%s" r="%s" fill="none" stroke="#000000" stroke-opacity="0.18" '
+                    'stroke-width="4"/>' % (fmt(C), fmt(C), fmt(hole + 2)))
+    svg.defs.append(linear("dedge", [(0, "#FFFFFF", 0.9), (0.4, "#FFFFFF", 0), (0.8, "#000000", 0),
+                                     (1, "#000000", 0.22)], C - R, C + R))
+    svg.body.append('<circle cx="%s" cy="%s" r="%s" fill="none" stroke="url(#dedge)" stroke-width="6"/>'
+                    % (fmt(C), fmt(C), fmt(R - 3)))
+    svg.body.append('<circle cx="%s" cy="%s" r="%s" fill="none" stroke="#000000" stroke-opacity="0.12" '
+                    'stroke-width="3"/>' % (fmt(C), fmt(C), fmt(R - 1.5)))
+    return svg.text()
+
+
+class Place:
+    """A places icon: its canonical name, aliases (symlinks) and a builder(variant) -> svg text."""
+    def __init__(self, name, aliases, build, label=""):
+        self.name, self.aliases, self.build, self.label = name, aliases, build, label
+
+
+def _folder(emblem=None, color=None, open_=False):
+    return lambda variant: folder_svg(color or FOLDER_COLORS["blue"], emblem, open_, variant)
+
+
+PLACES = [
+    Place("folder", ["inode-directory", "folder-blue", "gtk-directory", "gnome-fs-directory", "stock_folder"], _folder(), "Pasta"),
+    Place("folder-open", ["folder-drag-accept", "folder-visiting", "gnome-fs-directory-accept",
+                          "gnome-fs-directory-visiting"], _folder(open_=True), "Aberta"),
+    Place("user-home", ["folder-home", "gnome-fs-home", "gtk-home"], _folder(e_home), "Pasta pessoal"),
+    Place("user-desktop", ["folder-desktop", "gnome-fs-desktop"], _folder(e_desktop), "Área de trabalho"),
+    Place("folder-documents", ["folder-document"], _folder(e_documents), "Documentos"),
+    Place("folder-download", ["folder-downloads"], _folder(e_download), "Downloads"),
+    Place("folder-music", ["folder-sound"], _folder(e_music), "Música"),
+    Place("folder-pictures", ["folder-images", "folder-picture", "folder-image", "folder-photos"],
+          _folder(g_photos), "Imagens"),
+    Place("folder-videos", ["folder-video", "folder-movies"], _folder(e_videos), "Vídeos"),
+    Place("folder-templates", [], _folder(e_templates), "Modelos"),
+    Place("folder-publicshare", ["folder-public"], _folder(e_public), "Público"),
+    Place("folder-games", [], _folder(e_games), "Jogos"),
+    Place("folder-development", ["folder-projects", "folder-code"], _folder(e_code), "Projetos"),
+    Place("folder-git", ["folder-github"], _folder(e_git), "Git"),
+    Place("folder-cloud", [], _folder(e_cloud), "Nuvem"),
+    Place("folder-network", ["folder-remote", "network-workgroup", "folder-remote-smb", "folder-remote-ftp",
+                             "folder-remote-nfs", "folder-remote-ssh"], _folder(e_network), "Rede"),
+    Place("folder-favorites", ["folder-important", "folder-bookmark", "folder-bookmarks"],
+          _folder(e_star), "Favoritos"),
+    Place("folder-recent", [], _folder(e_recent), "Recentes"),
+    Place("folder-locked", ["folder-encrypted"], _folder(g_lock), "Protegida"),
+    Place("folder-applications", ["folder-apps"], _folder(e_apps), "Aplicativos"),
+    Place("folder-temp", ["folder-tmp"], _folder(e_temp), "Temporários"),
+    Place("folder-trash", [], _folder(e_trash), "Lixeira (pasta)"),
+    Place("user-trash", ["trash-empty", "user-trash-empty", "gnome-fs-trash-empty", "emptytrash"],
+          lambda v: trash_svg(False, v), "Lixeira"),
+    Place("user-trash-full", ["trash-full", "gnome-fs-trash-full"], lambda v: trash_svg(True, v), "Lixeira cheia"),
+    Place("drive-harddisk", ["drive-harddisk-system", "drive-harddisk-root"], harddisk_svg, "Disco"),
+    Place("drive-removable-media", ["drive-removable-media-usb", "drive-removable-media-usb-pendrive",
+                                    "media-removable"], removable_svg, "Removível"),
+    Place("media-optical", ["drive-optical", "media-optical-cd", "media-optical-dvd"], optical_svg, "Disco óptico"),
+] + [Place("folder-" + c, FOLDER_COLOR_ALIASES.get(c, []), _folder(color=v), c)
+     for c, v in FOLDER_COLORS.items() if c != "blue"]
+# folder-blue is the brand folder itself (an alias of folder)
+
+
+# --------------------------------------------------------------------------
 # Theme files
 # --------------------------------------------------------------------------
 def theme_dirs():
@@ -923,6 +1440,11 @@ def theme_dirs():
     for s in g["hidpi_sizes"]:
         dirs.append(("apps@2x/%d" % s, "Size=%d\nScale=2\nContext=Applications\nType=Fixed" % s))
     dirs.append(("apps/scalable", "Size=128\nMinSize=32\nMaxSize=1024\nContext=Applications\nType=Scalable"))
+    # fixed sizes first: Qt takes the first directory that matches the size
+    for s in g["small_sizes"] + g["sizes"]:
+        dirs.append(("places/%d" % s, "Size=%d\nContext=Places\nType=Fixed" % s))
+    for s in g["hidpi_sizes"]:
+        dirs.append(("places@2x/%d" % s, "Size=%d\nScale=2\nContext=Places\nType=Fixed" % s))
     dirs.append(("places/scalable", "Size=64\nMinSize=8\nMaxSize=512\nContext=Places\nType=Scalable"))
     dirs.append(("places/symbolic", "Size=16\nMinSize=8\nMaxSize=512\nContext=Places\nType=Scalable"))
     return dirs
@@ -970,6 +1492,7 @@ def main():
     icons = os.path.join(out, "icons")
     theme = os.path.join(icons, "Lingmo")
     apps = [a for a in APPS if not args.only or a.name in args.only]
+    places = [p for p in PLACES if not args.only or p.name in args.only]
     g = DESIGN
 
     render = None if args.no_png else find_renderer()
@@ -996,6 +1519,29 @@ def main():
             for s in g["small_sizes"]:
                 jobs.append((small_path, os.path.join(icons, "hicolor/%dx%d/apps" % (s, s), a.name + ".png"), s))
 
+    # places: folders, trash, drives; 16 px is "tiny", 22/24 px (and their @2x) "small"
+    links = []   # (dir, alias file, target file)
+    for p in places:
+        full_path = os.path.join(theme, "places/scalable", p.name + ".svg")
+        write(full_path, p.build("full"))
+        small_path = os.path.join(tmp, p.name + "-small.svg")
+        write(small_path, p.build("small"))
+        tiny_path = os.path.join(tmp, p.name + "-tiny.svg")
+        write(tiny_path, p.build("tiny"))
+        targets = [(os.path.join(theme, "places/scalable"), ".svg")]
+        for s in g["small_sizes"]:
+            jobs.append((tiny_path if s == 16 else small_path, os.path.join(theme, "places/%d" % s, p.name + ".png"), s))
+        for s in g["sizes"]:
+            jobs.append((full_path, os.path.join(theme, "places/%d" % s, p.name + ".png"), s))
+        for s in g["hidpi_sizes"]:
+            src = small_path if s in g["small_sizes"] else full_path
+            jobs.append((src, os.path.join(theme, "places@2x/%d" % s, p.name + ".png"), 2 * s))
+        if render:
+            targets += [(os.path.join(theme, "places/%d" % s), ".png") for s in g["small_sizes"] + g["sizes"]]
+            targets += [(os.path.join(theme, "places@2x/%d" % s), ".png") for s in g["hidpi_sizes"]]
+        for d, ext in targets:
+            links += [(d, a + ext, p.name + ext) for a in p.aliases]
+
     # neutral plate for third-party icons
     plates = os.path.join(out, "lingmo-icons")
     write(os.path.join(plates, "plate.svg"), neutral_plate_svg())
@@ -1019,6 +1565,12 @@ def main():
                 list(pool.map(lambda p: subprocess.run(["optipng", "-quiet", "-o1", "-strip", "all", p],
                                                        check=False), pngs))
     shutil.rmtree(tmp, ignore_errors=True)
+    for d, alias, target in links:   # aliases are relative links next to the icon
+        os.makedirs(d, exist_ok=True)
+        a = os.path.join(d, alias)
+        if os.path.lexists(a):
+            os.remove(a)
+        os.symlink(target, a)
 
     if not args.only:
         dirs = theme_dirs()
@@ -1032,18 +1584,23 @@ def main():
         # Lingmo-dark: same app icons, dark-mode symbolic icons from WhiteSur-dark
         dark = os.path.join(icons, "Lingmo-dark")
         os.makedirs(dark, exist_ok=True)
-        for link in ("apps", "apps@2x"):
+        # folders stay the same in the dark (they read well on both): link Lingmo's places
+        # sizes; only the symbolic start-here differs
+        shared = ["apps", "apps@2x", "places@2x"] + ["places/%s" % s for s in
+                                                     g["small_sizes"] + g["sizes"] + ["scalable"]]
+        for link in shared:
             p = os.path.join(dark, link)
             if os.path.lexists(p):
                 os.remove(p) if os.path.islink(p) else shutil.rmtree(p)
             if os.path.isdir(os.path.join(theme, link)):
-                os.symlink("../Lingmo/" + link, p)
-        write(os.path.join(dark, "places/scalable/start-here.svg"), start_here_svg())
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                os.symlink(os.path.relpath(os.path.join(theme, link), os.path.dirname(p)), p)
         write(os.path.join(dark, "places/symbolic/start-here-symbolic.svg"), start_here_svg("#DEDEDE"))
         write(os.path.join(dark, "index.theme"), index_theme(
             "Lingmo-dark", "Lingmo app icons on fluid plates, WhiteSur dark for the rest",
             "Lingmo-generated,WhiteSur-dark,WhiteSur,hicolor", dirs))
-    print("%d icons -> %s%s" % (len(apps), theme, "" if render else " (SVG only)"))
+    print("%d app icons, %d places (+%d aliases) -> %s%s" % (
+        len(apps), len(places), sum(len(p.aliases) for p in places), theme, "" if render else " (SVG only)"))
 
 
 if __name__ == "__main__":
