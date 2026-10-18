@@ -1432,6 +1432,24 @@ PLACES = [
 # --------------------------------------------------------------------------
 # Theme files
 # --------------------------------------------------------------------------
+# Folders, trash and drives come from Crule, Lingmo's own original icon theme (installed
+# by this package): the Lingmo theme links Crule's places dirs instead of drawing its own.
+# Set to "generated" to use the PLACES drawn above.
+FOLDERS = "crule"
+CRULE_PLACES = ["16", "22", "24", "scalable"]
+
+
+def link_crule_places(theme_dir, crule):
+    """Point theme_dir/places{,@2x}/<size> at the same dirs of an installed Crule theme."""
+    for sub in ("places", "places@2x"):
+        for size in CRULE_PLACES:
+            p = os.path.join(theme_dir, sub, size)
+            if os.path.lexists(p):
+                os.remove(p) if os.path.islink(p) else shutil.rmtree(p)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            os.symlink(os.path.join("..", "..", crule if size != "scalable" else "Crule", sub, size), p)
+
+
 def theme_dirs():
     g = DESIGN
     dirs = []
@@ -1440,6 +1458,15 @@ def theme_dirs():
     for s in g["hidpi_sizes"]:
         dirs.append(("apps@2x/%d" % s, "Size=%d\nScale=2\nContext=Applications\nType=Fixed" % s))
     dirs.append(("apps/scalable", "Size=128\nMinSize=32\nMaxSize=1024\nContext=Applications\nType=Scalable"))
+    if FOLDERS == "crule":   # the same directories as Crule's index.theme
+        for s in (16, 22, 24):
+            dirs.append(("places/%d" % s, "Size=%d\nContext=Places\nType=Fixed" % s))
+        for s in (16, 22, 24):
+            dirs.append(("places@2x/%d" % s, "Size=%d\nScale=2\nContext=Places\nType=Fixed" % s))
+        dirs.append(("places/scalable", "Size=64\nMinSize=22\nMaxSize=512\nContext=Places\nType=Scalable"))
+        dirs.append(("places@2x/scalable", "Size=64\nScale=2\nMinSize=22\nMaxSize=512\nContext=Places\nType=Scalable"))
+        dirs.append(("places/symbolic", "Size=16\nMinSize=8\nMaxSize=512\nContext=Places\nType=Scalable"))
+        return dirs
     # fixed sizes first: Qt takes the first directory that matches the size
     for s in g["small_sizes"] + g["sizes"]:
         dirs.append(("places/%d" % s, "Size=%d\nContext=Places\nType=Fixed" % s))
@@ -1492,7 +1519,7 @@ def main():
     icons = os.path.join(out, "icons")
     theme = os.path.join(icons, "Lingmo")
     apps = [a for a in APPS if not args.only or a.name in args.only]
-    places = [p for p in PLACES if not args.only or p.name in args.only]
+    places = [p for p in PLACES if FOLDERS != "crule" and (not args.only or p.name in args.only)]
     g = DESIGN
 
     render = None if args.no_png else find_renderer()
@@ -1576,7 +1603,10 @@ def main():
         dirs = theme_dirs()
         if not render:
             dirs = [d for d in dirs if not d[0][-1].isdigit()]
-        write(os.path.join(theme, "places/scalable/start-here.svg"), start_here_svg())
+        if FOLDERS == "crule":
+            link_crule_places(theme, "Crule")
+        else:
+            write(os.path.join(theme, "places/scalable/start-here.svg"), start_here_svg())
         write(os.path.join(theme, "places/symbolic/start-here-symbolic.svg"), start_here_svg("#363636"))
         write(os.path.join(theme, "index.theme"), index_theme(
             "Lingmo", "Lingmo app icons on fluid plates, WhiteSur for the rest",
@@ -1586,8 +1616,12 @@ def main():
         os.makedirs(dark, exist_ok=True)
         # folders stay the same in the dark (they read well on both): link Lingmo's places
         # sizes; only the symbolic start-here differs
-        shared = ["apps", "apps@2x", "places@2x"] + ["places/%s" % s for s in
-                                                     g["small_sizes"] + g["sizes"] + ["scalable"]]
+        if FOLDERS == "crule":
+            link_crule_places(dark, "Crule-dark")
+            shared = ["apps", "apps@2x"]
+        else:
+            shared = ["apps", "apps@2x", "places@2x"] + ["places/%s" % s for s in
+                                                         g["small_sizes"] + g["sizes"] + ["scalable"]]
         for link in shared:
             p = os.path.join(dark, link)
             if os.path.lexists(p):
