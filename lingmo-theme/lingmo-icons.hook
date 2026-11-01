@@ -1,0 +1,18 @@
+# Puts the icons of third-party apps on Lingmo plates (Lingmo-generated icon theme)
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Target = usr/share/applications/*.desktop
+Target = usr/share/icons/hicolor/*
+Target = usr/share/pixmaps/*
+Target = usr/share/icons/Lingmo/index.theme
+Target = usr/share/icons/WhiteSur/index.theme
+Target = usr/share/lingmo-icons/plate.json
+
+[Action]
+Description = Placing app icons on Lingmo plates...
+When = PostTransaction
+Exec = /usr/bin/lingmo-icons-update --quiet
+Depends = python-pillow
