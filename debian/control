@@ -11,7 +11,7 @@ Rules-Requires-Root: binary-targets
 Homepage: https://lingmo.org
 
 
-Package: lingmo-systemicons
+Package: lingmo-icon-theme
 Architecture: all
 Depends: ${misc:Depends}
 Description: System software icon for Lingmo OS
