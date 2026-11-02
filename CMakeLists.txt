@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
-project(cute-icons)
+project(lingmo-icons)
 
 include(FeatureSummary)
 
-install(DIRECTORY Crule DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons)
-install(DIRECTORY Crule-dark DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons)
+install(DIRECTORY lingmo-light DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons)
+install(DIRECTORY lingmo-dark DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons)
