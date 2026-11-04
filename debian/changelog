@@ -1,79 +1,21 @@
-lingmo-systemicons (5.0.1+lingmo5u1) unstable; urgency=medium
+lingmo-systemicons (5.0.2+lingmo5u1) unstable; urgency=medium
 
   * Rename icon theme directories: Crule → lingmo-light, Crule-dark → lingmo-dark.
   * Align installed directory names with the index.theme Name= fields so
     the system default icon theme resolves correctly.
 
- -- Lingmo OS Team <team@lingmo.org>  Mon, 02 Nov 2026 14:00:00 +0800
+ -- Lingmo OS Team <team@lingmo.org>  Wed, 04 Nov 2026 14:00:00 +0800
 
-lingmo-systemicons (5.0.0+lingmo5u2) unstable; urgency=medium
+lingmo-icon-theme (5.0.0+lingmo5u1) unstable; urgency=medium
 
-  * Release new version (Lingmo OS Team)  <team@lingmo.org>
+  * Move the packaging to https://github.com/lingmoos/packaging.
+  * Version every Lingmo package 1.0.
 
- -- Lingmo OS Team <team@lingmo.org>  Sun, 01 Nov 2026 23:41:00 +0800
+ -- Lingmo OS Team <team@lingmo.org>  Tue, 20 Oct 2026 07:03:34 +0800
 
-lingmo-systemicons (2.8.0-1~lingmo3) helium; urgency=medium
+lingmo-icon-theme (1.0.0-1) unstable; urgency=medium
 
-  * Release new version (Lingmo OS Team)  <team@lingmo.org>
+  * Replace the legacy icon set with the Colloid-based theme.
+  * Add CMake installation and Debian packaging support.
 
- -- Lingmo OS Team <team@lingmo.org>  Fri, 31 Jan 2025 21:00:00 +0800
-
-lingmo-systemicons (2.0.3-5) UNRELEASED; urgency=medium
-
-  * Initial release (LingmoOS)  <lingmo@lingmo.org>
-
- -- Lingmo OS Team <lingmo@lingmo.org>  Tue, 13 Jan 2024 22:10:11 +0800
-
-lingmo-systemicons (2.0.3-5) UNRELEASED; urgency=medium
-
-  * Initial release (LingmoOS)  <lingmo@lingmo.org>
-
- -- LingmoOS Packaging Team <lingmo@lingmo.org>  Mon, 12 Feb 2024 20:25:01 +0800
-
-lingmo-systemicons (2.0.3) UNRELEASED; urgency=medium
-
-  * Initial release (LingmoOS)  <lingmo@lingmo.org>
-
- -- LingmoOS Packaging Team <lingmo@lingmo.org>  Sat, 10 Feb 2024 22:05:28 +0800
-
-lingmo-systemicons (2.0.2-2) UNRELEASED; urgency=medium
-
-  * Initial release (LingmoOS)  <lingmo@lingmo.org>
-
- -- LingmoOS Packaging Team <lingmo@lingmo.org>  Sat, 27 Jan 2024 22:25:20 +0800
-
-lingmo-systemicons (2.0.2) UNRELEASED; urgency=medium
-
-  * Initial release (LingmoOS)  <lingmo@lingmo.org>
-
- -- LingmoOS Packaging Team <lingmo@lingmo.org>  Sat, 27 Jan 2024 22:25:20 +0800
-
-lingmo-systemicons (2.0.1) UNRELEASED; urgency=medium
-
-  * Initial release (LingmoOS)  <lingmo@lingmo.org>
-
- -- LingmoOS Packaging Team <lingmo@lingmo.org>  Sat, 27 Jan 2024 11:25:20 +0800
-
-lingmo-systemicons (2.0.0) UNRELEASED; urgency=medium
-
-  * Initial release (LingmoOS)  <lingmo@lingmo.org>
-
- -- LingmoOS Packaging Team <lingmo@lingmo.org>  Fri, 22 Jan 2024 18:33:20 +0800
-
-lingmo-systemicons (1.9.9-20) UNRELEASED; urgency=medium
-
-  * Initial release (LingmoOS)  <lingmo@lingmo.org>
-
- -- LingmoOS Packaging Team <lingmo@lingmo.org>  Mon, 22 Jan 2024 18:33:20 +0800
- 
-lingmo-systemicons (1.9.9-10) UNRELEASED; urgency=medium
-
-  * Initial release (LingmoOS)  <lingmo@lingmo.org>
-
- -- LingmoOS Packaging Team <lingmo@lingmo.org>  Sun, 14 Jan 2024 18:33:20 +0800
- 
-lingmo-systemicons (1.9.9) UNRELEASED; urgency=medium
-
-  * Initial release (LingmoOS)  <lingmo@lingmo.org>
-
- -- LingmoOS Packaging Team <lingmo@lingmo.org>  Fri, 15 Dec 2023 22:36:35 +0800
+ -- Lingmo OS Team <team@lingmo.org>  Sat, 05 Sep 2026 00:00:00 -0400

@@ -8,15 +8,6 @@ System software icon for Lingmo OS
 - 许可证：未声明（README 生成时未能确定）
 - 一句话说明的来源：debian/control（`Package: lingmo-systemicons` 的 `Description`）
 
-## 目录结构
-
-| 路径 | 内容 |
-| --- | --- |
-| `.github/workflows/` | CI 工作流（1 个文件） |
-| `Crule/` | 19 个子目录、5 个文件 |
-| `Crule-dark/` | 19 个子目录、5 个文件 |
-| `debian/` | Debian 打包（1 个子目录、4 个文件） |
-
 ## 构建
 
 根目录 `CMakeLists.txt` 是顶层构建脚本（`cmake_minimum_required(VERSION 3.5)`，`project(cute-icons)`）。
@@ -51,14 +42,6 @@ sudo cmake --install build
 sudo apt build-dep .
 dpkg-buildpackage -uc -us -nc -b
 ```
-
-## 许可证
-
-未声明（README 生成时未能确定）：
-
-- 仓库根目录没有 `LICENSE`/`COPYING` 等许可证文件。
-- `debian/copyright` 没有可用的 `License` 字段。
-- 仓库没有可抽查的源文件。
 
 ## 参与贡献
 
