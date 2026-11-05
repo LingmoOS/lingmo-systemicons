@@ -1,9 +1,8 @@
 [Icon Theme]
-Name=lingmoOS
+Name=lingmo-light
 Comment=lingmoOS icon theme.
 Inherits=hicolor,breeze
 Example=folder
-
 DisplayDepth=32
 LinkOverlay=link_overlay
 LockOverlay=lock_overlay
@@ -21,13 +20,9 @@ PanelSizes=16,22,32,48,64,96,128,256
 DialogDefault=32
 DialogSizes=16,22,32,48,64,128,256
 FollowsColorScheme=true
-# Directory list
-Directories=actions/16,actions/22,actions/24,actions/32,actions/symbolic,apps/22,apps/scalable,apps/symbolic,categories/22,categories/32,categories/symbolic,emblems/16,emblems/22,emblems/symbolic,places/symbolic,places/scalable,places/16,places/22,places/24,mimetypes/scalable,mimetypes/symbolic,devices/scalable,devices/symbolic,devices/16,devices/22,devices/24,devices/32,status/16,status/22,status/24,status/32,status/symbolic
-ScaledDirectories=actions@2x/16,actions@2x/22,actions@2x/24,actions@2x/32,actions@2x/symbolic,apps@2x/22,apps@2x/scalable,apps@2x/symbolic,categories@2x/22,categories@2x/32,categories@2x/symbolic,emblems@2x/16,emblems@2x/22,emblems@2x/symbolic,places@2x/symbolic,places@2x/scalable,places@2x/16,places@2x/22,places@2x/24,mimetypes@2x/scalable,mimetypes@2x/symbolic,devices@2x/scalable,devices@2x/symbolic,devices@2x/16,devices@2x/22,devices@2x/24,devices@2x/32,status@2x/16,status@2x/22,status@2x/24,status@2x/32,status@2x/symbolic,actions@3x/16,actions@3x/22,actions@3x/24,actions@3x/32,actions@3x/symbolic,apps@3x/22,apps@3x/scalable,apps@3x/symbolic,categories@3x/22,categories@3x/32,categories@3x/symbolic,emblems@3x/16,emblems@3x/22,emblems@3x/symbolic,places@3x/symbolic,places@3x/scalable,places@3x/16,places@3x/22,places@3x/24,mimetypes@3x/scalable,mimetypes@3x/symbolic,devices@3x/scalable,devices@3x/symbolic,devices@3x/16,devices@3x/22,devices@3x/24,devices@3x/32,status@3x/16,status@3x/22,status@3x/24,status@3x/32,status@3x/symbolic
-
 KDE-Extensions=.svg
-
-Directories=actions/16,actions/22,actions/24,actions/32,actions/symbolic,animations/16,animations/22,animations/24,apps/32,apps/scalable,apps/symbolic,categories/32,categories/symbolic,places/symbolic,places/scalable,places/16,places/22,places/24,mimes/16,mimes/22,mimes/scalable,mimes/symbolic,devices/scalable,devices/symbolic,devices/16,devices/22,devices/24,emblems/16,emblems/22,emblems/24,emblems/symbolic,status/16,status/22,status/24,status/32,status/symbolic,actions@2x/16,actions@2x/22,actions@2x/24,actions@2x/32,actions@2x/symbolic,animations@2x/16,animations@2x/22,animations@2x/24,apps@2x/32,apps@2x/scalable,apps@2x/symbolic,categories@2x/32,categories@2x/symbolic,places@2x/symbolic,places@2x/scalable,places@2x/16,places@2x/22,places@2x/24,mimes@2x/16,mimes@2x/22,mimes@2x/scalable,mimes@2x/symbolic,devices@2x/scalable,devices@2x/symbolic,devices@2x/16,devices@2x/22,devices@2x/24,emblems@2x/16,emblems@2x/22,emblems@2x/24,emblems@2x/symbolic,status@2x/16,status@2x/22,status@2x/24,status@2x/32,status@2x/symbolic
+Directories=actions/16,actions/22,actions/24,actions/32,actions/symbolic,animations/16,animations/22,animations/24,apps/22,apps/scalable,apps/symbolic,categories/22,categories/32,categories/symbolic,devices/16,devices/22,devices/24,devices/32,devices/scalable,devices/symbolic,emblems/16,emblems/22,emblems/symbolic,mimes/16,mimes/22,mimes/scalable,mimes/symbolic,mimetypes/scalable,mimetypes/symbolic,places/16,places/22,places/24,places/scalable,places/symbolic,status/16,status/22,status/24,status/32,status/symbolic
+ScaledDirectories=actions@2x/16,actions@2x/22,actions@2x/24,actions@2x/32,actions@2x/symbolic,actions@3x/16,actions@3x/22,actions@3x/24,actions@3x/32,actions@3x/symbolic,apps@2x/22,apps@2x/scalable,apps@2x/symbolic,apps@3x/22,apps@3x/scalable,apps@3x/symbolic,categories@2x/22,categories@2x/32,categories@2x/symbolic,categories@3x/22,categories@3x/32,categories@3x/symbolic,devices@2x/16,devices@2x/22,devices@2x/24,devices@2x/32,devices@2x/scalable,devices@2x/symbolic,devices@3x/16,devices@3x/22,devices@3x/24,devices@3x/32,devices@3x/scalable,devices@3x/symbolic,emblems@2x/16,emblems@2x/22,emblems@2x/symbolic,emblems@3x/16,emblems@3x/22,emblems@3x/symbolic,mimetypes@2x/scalable,mimetypes@2x/symbolic,mimetypes@3x/scalable,mimetypes@3x/symbolic,places@2x/16,places@2x/22,places@2x/24,places@2x/scalable,places@2x/symbolic,places@3x/16,places@3x/22,places@3x/24,places@3x/scalable,places@3x/symbolic,status@2x/16,status@2x/22,status@2x/24,status@2x/32,status@2x/symbolic,status@3x/16,status@3x/22,status@3x/24,status@3x/32,status@3x/symbolic
 
 [actions/16]
 Size=16
@@ -264,6 +259,8 @@ Type=Scalable
 
 # @2x
 
+# @2x
+
 [actions@2x/16]
 Size=16
 Scale=2
@@ -297,24 +294,6 @@ Context=Actions
 MinSize=16
 MaxSize=512
 Type=Scalable
-
-[animations@2x/16]
-Size=16
-Scale=2
-Context=Animations
-Type=Fixed
-
-[animations@2x/22]
-Size=22
-Scale=2
-Context=Animations
-Type=Fixed
-
-[animations@2x/24]
-Size=24
-Scale=2
-Context=Animations
-Type=Fixed
 
 [apps@2x/22]
 Size=22
@@ -424,34 +403,6 @@ MinSize=16
 MaxSize=512
 Type=Scalable
 
-[mimes@2x/16]
-Size=16
-Scale=2
-Context=MimeTypes
-Type=Fixed
-
-[mimes@2x/22]
-Size=22
-Scale=2
-Context=MimeTypes
-Type=Fixed
-
-[mimes@2x/scalable]
-Size=64
-Scale=2
-Context=MimeTypes
-MinSize=24
-MaxSize=512
-Type=Scalable
-
-[mimes@2x/symbolic]
-Size=16
-Scale=2
-Context=MimeTypes
-MinSize=16
-MaxSize=512
-Type=Scalable
-
 [mimetypes@2x/scalable]
 Size=64
 Scale=2
@@ -535,6 +486,8 @@ Context=Status
 MinSize=16
 MaxSize=512
 Type=Scalable
+
+# @3x
 
 # @3x
 
@@ -763,3 +716,4 @@ Context=Status
 MinSize=16
 MaxSize=512
 Type=Scalable
+

@@ -1,3 +1,21 @@
+lingmo-systemicons (5.0.3+lingmo5u1) unstable; urgency=medium
+
+  * index.theme: fix icon theme not loading and partial missing app icons.
+    - Remove duplicate Directories= entry (line 25 and 30 both defined it;
+      the second overrode the first, making apps/22, categories/22,
+      devices/32, mimetypes/scalable and mimetypes/symbolic invisible).
+    - Fix Name= from 'lingmoOS' to 'lingmo-light' so the install script
+      replacement works correctly and the theme name matches its directory.
+    - Remove orphaned @2x sections for animations and mimes (the install
+      script only creates @2x/@3x symlinks for actions/apps/categories/
+      devices/emblems/mimetypes/places/status; animations and mimes never
+      got symlinks so those sections referenced non-existent dirs).
+    - Remove fictitious apps/32 and emblems/24 entries (dirs don't exist).
+    - Result: single Directories= (39 dirs) + ScaledDirectories= (64 dirs),
+      all entries have matching [section] definitions, no orphaned sections.
+
+ -- Lingmo OS Team <team@lingmo.org>  Thu, 05 Nov 2026 06:15:00 +0800
+
 lingmo-systemicons (5.0.2+lingmo5u1) unstable; urgency=medium
 
   * Rename icon theme directories: Crule → lingmo-light, Crule-dark → lingmo-dark.
