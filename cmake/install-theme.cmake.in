@@ -39,7 +39,7 @@ endfunction()
 
 function(_lingmo_create_scaled_links theme_dir)
   foreach(_directory IN ITEMS
-      actions apps categories devices emblems mimetypes places status)
+      actions animations apps categories devices emblems mimes mimetypes places status)
     _lingmo_create_symlink(
       "${_directory}" "${theme_dir}/${_directory}@2x"
     )
@@ -76,18 +76,28 @@ endforeach()
 file(MAKE_DIRECTORY "${_lingmo_theme}")
 _lingmo_copy_index("${_lingmo_theme}" "${_lingmo_theme_name}")
 foreach(_directory IN ITEMS
-    actions apps categories devices emblems mimetypes places status)
+    actions animations apps categories devices emblems mimes mimetypes places status)
   _lingmo_copy_contents(
     "${_lingmo_source_dir}/src/${_directory}"
     "${_lingmo_theme}/${_directory}"
   )
 endforeach()
 foreach(_directory IN ITEMS
-    actions apps categories devices emblems mimetypes places status)
+    actions animations apps categories devices emblems mimes mimetypes places status)
   _lingmo_copy_contents(
     "${_lingmo_source_dir}/links/${_directory}"
     "${_lingmo_theme}/${_directory}"
   )
 endforeach()
+# Git archives may store icon aliases as tiny text files rather than symlinks.
+# Resolve them only after both artwork and alias directories have been merged.
+find_program(_lingmo_python NAMES python3 REQUIRED)
+execute_process(
+  COMMAND "${_lingmo_python}" "${_lingmo_source_dir}/tools/restore-aliases.py" "${_lingmo_theme}"
+  RESULT_VARIABLE _alias_result
+)
+if(NOT _alias_result EQUAL 0)
+  message(FATAL_ERROR "Lingmo icon aliases could not be restored")
+endif()
 _lingmo_create_scaled_links("${_lingmo_theme}")
 _lingmo_update_cache("${_lingmo_theme}")

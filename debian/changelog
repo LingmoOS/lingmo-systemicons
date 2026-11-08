@@ -1,3 +1,11 @@
+lingmo-systemicons (5.0.3+lingmo5u2) unstable; urgency=medium
+
+  * Restore flattened icon aliases before generating the theme cache.
+  * Fix circular, missing and case-sensitive icon targets and add archive-manager alias.
+  * Install indexed MIME and animation directories and audit all alias chains.
+
+ -- Lingmo OS Team <team@lingmo.org>  Sun, 08 Nov 2026 12:00:00 +0800
+
 lingmo-systemicons (5.0.3+lingmo5u1) unstable; urgency=medium
 
   * index.theme: fix icon theme not loading and partial missing app icons.
